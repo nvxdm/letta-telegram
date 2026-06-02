@@ -1,0 +1,10 @@
+services:
+  letta-telegram:
+    build: .
+    image: letta-telegram:latest
+    container_name: letta-telegram
+    restart: unless-stopped
+    env_file:
+      - .env
+    init: true
+    stop_grace_period: 20s
