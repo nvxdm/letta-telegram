@@ -13,7 +13,7 @@ A lightweight, production-ready proxy that relays Telegram messages (text, photo
 [![Telegraf](https://img.shields.io/badge/Telegraf-4.16-26A5E4?logo=telegram&logoColor=white)](https://telegraf.js.org)
 [![Letta](https://img.shields.io/badge/Letta-Agents-6E56CF)](https://letta.com)
 [![Docker](https://img.shields.io/badge/Docker-multi--arch-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/nvxdm/letta-telegram)
-[![License](https://img.shields.io/badge/license-UNLICENSED-lightgrey)](#-license)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](#-license)
 
 </div>
 
@@ -182,7 +182,7 @@ sequenceDiagram
 
 ## 📄 License
 
-This project is currently **UNLICENSED** (all rights reserved). Contact the maintainer for usage terms.
+Released under the [MIT License](LICENSE). © 2026 Dmytro.
 
 <div align="center">
 <br/>
