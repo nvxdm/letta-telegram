@@ -76,8 +76,8 @@ All configuration is done through environment variables. Copy `.env.example` to 
 
 | Var | Required | Default | Notes |
 |---|:---:|---|---|
-| `LETTA_BASE_URL` | ✅ | — | e.g. `https://api.letta.com` or your self-hosted URL |
-| `LETTA_TOKEN` | ✅ | — | Bearer token (a self-hosted server password works fine) |
+| `LETTA_BASE_URL` | ✅ | — | Letta Cloud `https://api.letta.com`, or your self-hosted instance URL |
+| `LETTA_TOKEN` | ✅ | — | Bearer token — a Letta Cloud API key, or a self-hosted server password |
 | `LETTA_TIMEOUT_MS` | — | `120000` | Per-request timeout in ms |
 
 ### Per-bot block
