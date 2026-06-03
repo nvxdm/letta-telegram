@@ -24,7 +24,8 @@ export class TgPayloadBuilderService {
     const message = ctx.message;
     if (!message) return null;
 
-    const prefix = this.buildSenderPrefix(ctx, message);
+    const groupContext = this.buildGroupContext(ctx);
+    const senderLabel = this.buildSenderLabel(message);
     const replyContext = this.buildReplyContext(message);
     const blocks: LettaContentBlock[] = [];
 
@@ -42,7 +43,7 @@ export class TgPayloadBuilderService {
         });
       }
       const caption = ('caption' in message && message.caption) || '';
-      blocks.push({ type: 'text', text: this.joinText(prefix, replyContext, caption || '[photo]') });
+      blocks.push({ type: 'text', text: this.composeText(groupContext, replyContext, senderLabel, caption || '[photo]') });
       return blocks;
     }
 
@@ -73,7 +74,7 @@ export class TgPayloadBuilderService {
       const note = `[document: ${doc.file_name ?? 'file'}${doc.mime_type ? ` (${doc.mime_type})` : ''}]`;
       blocks.push({
         type: 'text',
-        text: this.joinText(prefix, replyContext, caption || note),
+        text: this.composeText(groupContext, replyContext, senderLabel, caption || note),
       });
       return blocks;
     }
@@ -96,7 +97,7 @@ export class TgPayloadBuilderService {
       }
       blocks.push({
         type: 'text',
-        text: this.joinText(prefix, replyContext, `[voice message, ${voice.duration ?? '?'}s]`),
+        text: this.composeText(groupContext, replyContext, senderLabel, `[voice message, ${voice.duration ?? '?'}s]`),
       });
       return blocks;
     }
@@ -119,25 +120,42 @@ export class TgPayloadBuilderService {
       }
       blocks.push({
         type: 'text',
-        text: this.joinText(prefix, replyContext, `[audio: ${audio.title ?? audio.file_name ?? 'untitled'}]`),
+        text: this.composeText(groupContext, replyContext, senderLabel, `[audio: ${audio.title ?? audio.file_name ?? 'untitled'}]`),
       });
       return blocks;
     }
 
     if ('text' in message && message.text) {
-      blocks.push({ type: 'text', text: this.joinText(prefix, replyContext, message.text) });
+      blocks.push({ type: 'text', text: this.composeText(groupContext, replyContext, senderLabel, message.text) });
       return blocks;
     }
 
     return null;
   }
 
-  private buildSenderPrefix(ctx: Context, message: Message): string {
+  // Group-name context line, prepended only for group/supergroup chats.
+  private buildGroupContext(ctx: Context): string {
     if (ctx.chat?.type === 'private') return '';
+    const title = 'title' in (ctx.chat ?? {}) ? (ctx.chat as { title?: string }).title : '';
+    return `[in group "${title || 'unknown'}"]`;
+  }
+
+  // Sender attribution prepended to the message body in every chat: "Name (id) says:".
+  private buildSenderLabel(message: Message): string {
     const from = 'from' in message ? message.from : undefined;
     if (!from) return '';
-    const handle = from.username ? `@${from.username}` : `${from.first_name ?? 'user'}`;
-    return `[from ${handle} in group "${('title' in (ctx.chat ?? {}) ? (ctx.chat as { title?: string }).title : '') || 'unknown'}"]`;
+    const name = [from.first_name, from.last_name].filter(Boolean).join(' ') || from.username || 'user';
+    return `${name} (${from.id}) says:`;
+  }
+
+  private composeText(
+    groupContext: string,
+    replyContext: string,
+    senderLabel: string,
+    body: string,
+  ): string {
+    const line = senderLabel ? `${senderLabel} ${body}` : body;
+    return this.joinText(groupContext, replyContext, line);
   }
 
   private buildReplyContext(message: Message): string {
