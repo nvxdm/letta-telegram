@@ -22,7 +22,7 @@ export class AccessControlService {
       return allowed;
     }
 
-    if (chat.type === 'group' || chat.type === 'supergroup' || chat.type === 'channel') {
+    if (chat.type === 'group' || chat.type === 'supergroup') {
       const allowed = bot.allowedChatIds.includes(chat.id);
       if (!allowed) {
         this.logger.warn(

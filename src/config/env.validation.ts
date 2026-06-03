@@ -10,9 +10,15 @@ const idList = z
       .map((part) => part.trim())
       .filter((part) => part.length > 0)
       .map((part) => {
-        const n = Number(part);
-        if (!Number.isFinite(n) || !Number.isInteger(n)) {
+        // Telegram ids are plain base-10 integers (chat ids are negative).
+        // Reject hex/binary/scientific/'+' forms that Number() would silently
+        // coerce into a valid-but-wrong id.
+        if (!/^-?\d+$/.test(part)) {
           throw new Error(`Invalid numeric id: "${part}"`);
+        }
+        const n = Number(part);
+        if (!Number.isSafeInteger(n)) {
+          throw new Error(`Numeric id out of safe integer range: "${part}"`);
         }
         return n;
       });

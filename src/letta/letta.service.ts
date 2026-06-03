@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Letta, toFile } from '@letta-ai/letta-client';
 import type { LettaResponse, Message } from '@letta-ai/letta-client/resources/agents/messages';
+import type { MessageCreate } from '@letta-ai/letta-client/resources/agents/agents';
 import { LETTA_CONFIG } from '../config/letta.config';
 import type { LettaConfig } from '../config/env.validation';
 import { AssistantReply, LettaContentBlock } from './letta.types';
@@ -28,16 +29,9 @@ export class LettaService implements OnModuleInit {
         agentId,
         {
           messages: [
-            {
-              role: 'user',
-              content: content as unknown as Parameters<
-                typeof this.client.agents.messages.create
-              >[1]['messages'] extends Array<infer T> | null | undefined
-                ? T extends { content: infer C }
-                  ? C
-                  : never
-                : never,
-            },
+            // Our LettaContentBlock union is a superset of the SDK's typed content
+            // (it also models `file` blocks), so cast through unknown to the SDK shape.
+            { role: 'user', content: content as unknown as MessageCreate['content'] },
           ],
         },
         { timeout: this.cfg.timeoutMs, maxRetries: 1 },
@@ -81,11 +75,22 @@ export class LettaService implements OnModuleInit {
   }
 
   private async ensureFolder(agentId: string, botName: string): Promise<string | null> {
-    const cached = this.folderByAgent.get(agentId);
+    const folderName = `tg-bot-${botName}`;
+    // Key by agent *and* folder name: two bots can share one agentId but each
+    // owns a distinct per-bot folder.
+    const cacheKey = `${agentId}::${folderName}`;
+    const cached = this.folderByAgent.get(cacheKey);
     if (cached) return cached;
 
-    const folderName = `tg-bot-${botName}`;
     try {
+      // Reuse an existing same-named folder so process restarts don't pile up
+      // duplicate folders on the Letta server.
+      const existingId = await this.findFolderByName(folderName);
+      if (existingId) {
+        this.folderByAgent.set(cacheKey, existingId);
+        return existingId;
+      }
+
       const created = await this.client.folders.create({ name: folderName });
       const folderId = (created as { id?: string }).id;
       if (!folderId) {
@@ -101,11 +106,22 @@ export class LettaService implements OnModuleInit {
         );
       }
 
-      this.folderByAgent.set(agentId, folderId);
+      this.folderByAgent.set(cacheKey, folderId);
       this.logger.log(`Bound folder ${folderId} ("${folderName}") to agent ${agentId}`);
       return folderId;
     } catch (err) {
       this.logger.error(`Could not provision folder "${folderName}": ${(err as Error).message}`);
+      return null;
+    }
+  }
+
+  private async findFolderByName(folderName: string): Promise<string | null> {
+    try {
+      const page = await this.client.folders.list({ name: folderName });
+      const match = page.getPaginatedItems().find((f) => f.name === folderName);
+      return (match as { id?: string } | undefined)?.id ?? null;
+    } catch (err) {
+      this.logger.warn(`Folder lookup for "${folderName}" failed: ${(err as Error).message}`);
       return null;
     }
   }
@@ -141,12 +157,19 @@ export class LettaService implements OnModuleInit {
   private async runSerialized<T>(key: string, task: () => Promise<T>): Promise<T> {
     const prior = this.agentLocks.get(key) ?? Promise.resolve();
     const next = prior.then(task, task);
-    this.agentLocks.set(
-      key,
-      next.finally(() => {
-        if (this.agentLocks.get(key) === next) this.agentLocks.delete(key);
-      }),
+    // The stored promise is only used for sequencing, so swallow its result/
+    // rejection (the caller awaits `next` and handles errors) — otherwise a
+    // failed task with no follow-up call would surface as an unhandled
+    // rejection. Compare against `tracked` (the stored promise) so cleanup
+    // actually runs once this is the latest entry.
+    const tracked: Promise<void> = next.then(
+      () => undefined,
+      () => undefined,
     );
+    void tracked.finally(() => {
+      if (this.agentLocks.get(key) === tracked) this.agentLocks.delete(key);
+    });
+    this.agentLocks.set(key, tracked);
     return next;
   }
 }

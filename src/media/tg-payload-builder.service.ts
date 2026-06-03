@@ -145,7 +145,9 @@ export class TgPayloadBuilderService {
     const rep = message.reply_to_message;
     const repText = 'text' in rep ? rep.text : 'caption' in rep ? rep.caption : undefined;
     if (!repText) return '[in reply to a previous message]';
-    const trimmed = repText.length > 200 ? `${repText.slice(0, 200)}…` : repText;
+    // Slice by code points so we never split a surrogate pair (emoji) at the boundary.
+    const cp = [...repText];
+    const trimmed = cp.length > 200 ? `${cp.slice(0, 200).join('')}…` : repText;
     return `[in reply to: "${trimmed}"]`;
   }
 

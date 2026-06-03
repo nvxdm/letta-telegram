@@ -48,7 +48,9 @@ export class AgentOutputParserService {
       case 'heading': {
         const t = token as Tokens.Heading;
         const inner = this.renderInline(t.tokens ?? [], ctx);
-        return `<b>${inner}</b>\n\n`;
+        // Skip empty tags (e.g. a heading that is only an image) — Telegram
+        // rejects messages containing empty entities like <b></b>.
+        return inner.length > 0 ? `<b>${inner}</b>\n\n` : '';
       }
       case 'paragraph': {
         const t = token as Tokens.Paragraph;
@@ -60,7 +62,7 @@ export class AgentOutputParserService {
       case 'blockquote': {
         const t = token as Tokens.Blockquote;
         const inner = this.renderTokens(t.tokens ?? [], ctx).trim();
-        return `<blockquote>${inner}</blockquote>\n\n`;
+        return inner.length > 0 ? `<blockquote>${inner}</blockquote>\n\n` : '';
       }
       case 'code': {
         const t = token as Tokens.Code;
@@ -105,15 +107,18 @@ export class AgentOutputParserService {
       }
       case 'strong': {
         const t = token as Tokens.Strong;
-        return `<b>${this.renderInline(t.tokens ?? [], ctx)}</b>`;
+        const inner = this.renderInline(t.tokens ?? [], ctx);
+        return inner.length > 0 ? `<b>${inner}</b>` : '';
       }
       case 'em': {
         const t = token as Tokens.Em;
-        return `<i>${this.renderInline(t.tokens ?? [], ctx)}</i>`;
+        const inner = this.renderInline(t.tokens ?? [], ctx);
+        return inner.length > 0 ? `<i>${inner}</i>` : '';
       }
       case 'del': {
         const t = token as Tokens.Del;
-        return `<s>${this.renderInline(t.tokens ?? [], ctx)}</s>`;
+        const inner = this.renderInline(t.tokens ?? [], ctx);
+        return inner.length > 0 ? `<s>${inner}</s>` : '';
       }
       case 'codespan': {
         const t = token as Tokens.Codespan;
@@ -223,8 +228,11 @@ export class AgentOutputParserService {
     let remaining = html;
     while (remaining.length > MAX_TEXT_LEN) {
       const window = remaining.slice(0, MAX_TEXT_LEN);
-      const cut = this.findSafeCut(window);
-      chunks.push(remaining.slice(0, cut).trim());
+      // Math.max(1, …) guarantees forward progress (no infinite loop); empty
+      // pieces are dropped so we never send Telegram an empty message.
+      const cut = Math.max(1, this.findSafeCut(window));
+      const piece = remaining.slice(0, cut).trim();
+      if (piece.length > 0) chunks.push(piece);
       remaining = remaining.slice(cut).trim();
     }
     if (remaining.length > 0) chunks.push(remaining);
@@ -239,7 +247,12 @@ export class AgentOutputParserService {
       window.lastIndexOf(' '),
     ];
     for (const c of candidates) {
-      if (c > MAX_TEXT_LEN * 0.5) return c;
+      if (c > MAX_TEXT_LEN * 0.5 && !splitsTagOrEntity(window, c)) return c;
+    }
+    // Back off from the hard limit to the last offset that doesn't bisect an
+    // HTML tag or entity (which would make Telegram reject the chunk).
+    for (let i = Math.min(window.length, MAX_TEXT_LEN); i > 0; i--) {
+      if (!splitsTagOrEntity(window, i)) return i;
     }
     return MAX_TEXT_LEN;
   }
@@ -254,11 +267,31 @@ function escapeHtml(s: string): string {
 }
 
 function escapeAttr(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return escapeHtml(s).replace(/"/g, '&quot;');
 }
 
-function stripTags(s: string): string {
-  return s.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+export function stripTags(s: string): string {
+  return s
+    .replace(/<[^>]+>/g, '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+/**
+ * True if cutting `s` at offset `i` would land inside an HTML tag (`<…>`) or an
+ * entity (`&…;`), which would yield malformed markup Telegram refuses to render.
+ */
+function splitsTagOrEntity(s: string, i: number): boolean {
+  if (s.lastIndexOf('<', i - 1) > s.lastIndexOf('>', i - 1)) return true;
+  const amp = s.lastIndexOf('&', i - 1);
+  if (amp !== -1 && i - amp <= 12) {
+    const semi = s.indexOf(';', amp);
+    if (semi === -1 || semi >= i) return true;
+  }
+  return false;
 }
 
 function padOrTruncate(s: string, width: number): string {

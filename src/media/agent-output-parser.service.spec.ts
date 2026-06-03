@@ -212,4 +212,33 @@ describe('AgentOutputParserService', () => {
     expect(html).not.toContain('**'); // no leftover markdown asterisks
     expect(html).not.toMatch(/^###/m);
   });
+
+  it('drops empty entities from image-only headings and bold', () => {
+    const heading = parser.parse('# ![logo](https://x/l.png)');
+    expect(textParts(heading.parts).join('')).not.toContain('<b></b>');
+    expect(photoParts(heading.parts)).toHaveLength(1); // image still relayed
+
+    const strong = parser.parse('**[x](https://x/y.png)**');
+    expect(textParts(strong.parts).join('')).not.toContain('<b></b>');
+    expect(photoParts(strong.parts)).toHaveLength(1);
+  });
+
+  it('chunks long formatted output without bisecting tags or entities', () => {
+    // Bold words have no internal spaces, so whitespace cuts fall between
+    // complete <b>…</b> pairs; literal < and & become entities via marked.
+    const unit = '**Important** note about a < b & c, see [docs](https://example.com/guide). ';
+    const texts = textParts(parser.parse(unit.repeat(120)).parts);
+    expect(texts.length).toBeGreaterThan(1);
+    for (const t of texts) {
+      expect(t.length).toBeGreaterThan(0);
+      expect(t.length).toBeLessThanOrEqual(4096);
+      // never ends inside a tag (a '<' with no following '>')
+      expect(t.lastIndexOf('<')).toBeLessThanOrEqual(t.lastIndexOf('>'));
+      // never ends inside an entity (a '&' with no following ';')
+      const amp = t.lastIndexOf('&');
+      if (amp !== -1) expect(t.indexOf(';', amp)).toBeGreaterThanOrEqual(amp);
+      // bold tags stay balanced within each chunk
+      expect((t.match(/<b>/g) ?? []).length).toBe((t.match(/<\/b>/g) ?? []).length);
+    }
+  });
 });

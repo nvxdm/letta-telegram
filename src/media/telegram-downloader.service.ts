@@ -7,6 +7,8 @@ export interface DownloadedFile {
   filename: string;
 }
 
+const DOWNLOAD_TIMEOUT_MS = 60_000;
+
 @Injectable()
 export class TelegramDownloaderService {
   private readonly logger = new Logger(TelegramDownloaderService.name);
@@ -19,7 +21,7 @@ export class TelegramDownloaderService {
     try {
       const link = await telegram.getFileLink(fileId);
       const url = link instanceof URL ? link.toString() : String(link);
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
       if (!res.ok) {
         this.logger.error(`Telegram file download failed: ${res.status} ${res.statusText}`);
         return null;

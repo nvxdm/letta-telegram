@@ -1,7 +1,9 @@
 import { Logger } from '@nestjs/common';
 import { BotConfig, botEnvSchema } from './env.validation';
 
-const BOT_TOKEN_PATTERN = /^BOT_(\d+)_TOKEN$/;
+// Canonical positive integers only — no leading zeros, so BOT_01_* can't
+// collide with BOT_1_* (both would parse to index 1 and clobber each other).
+const BOT_TOKEN_PATTERN = /^BOT_([1-9]\d*)_TOKEN$/;
 
 export function loadBotConfigs(env: NodeJS.ProcessEnv = process.env): BotConfig[] {
   const logger = new Logger('BotsConfig');

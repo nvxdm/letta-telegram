@@ -4,6 +4,9 @@
   "description": "NestJS proxy bridging Telegram bots to Letta agents",
   "private": true,
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\"",

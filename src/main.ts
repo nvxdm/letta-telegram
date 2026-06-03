@@ -19,7 +19,6 @@ async function bootstrap(): Promise<void> {
     logger: resolveLogLevels(),
     abortOnError: true,
   });
-  app.enableShutdownHooks();
 
   process.on('uncaughtException', (err) => {
     new Logger('UncaughtException').error(err.message, err.stack);

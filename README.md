@@ -56,16 +56,100 @@ yarn build && yarn start
 yarn start:dev
 ```
 
-### Docker
+### Docker (prebuilt image)
+
+The fastest path — no Node toolchain, no build. Just create your env file and run the published multi-arch image from Docker Hub.
 
 ```bash
-docker compose up --build
+cp .env.example .env
+# edit .env: LETTA_TOKEN, BOT_1_TOKEN, BOT_1_AGENT_ID, BOT_1_ALLOWED_USER_IDS, …
 ```
 
-Or pull the prebuilt multi-arch image straight from Docker Hub:
+**With the Docker CLI:**
 
 ```bash
-docker run --env-file .env nvxdm/letta-telegram:latest
+docker run -d \
+  --name letta-telegram \
+  --restart unless-stopped \
+  --env-file .env \
+  --init \
+  nvxdm/letta-telegram:latest
+
+docker logs -f letta-telegram          # follow logs
+docker stop letta-telegram && docker rm letta-telegram   # stop & remove
+
+# update: pull the new image, drop the old container, then re-run the command above
+docker pull nvxdm/letta-telegram:latest
+docker rm -f letta-telegram
+```
+
+…or skip the `.env` file entirely and pass the variables inline with `-e`:
+
+```bash
+docker run -d \
+  --name letta-telegram \
+  --restart unless-stopped \
+  --init \
+  -e LETTA_BASE_URL=https://api.letta.com \
+  -e LETTA_TOKEN=your-letta-api-key \
+  -e BOT_1_NAME=primary \
+  -e BOT_1_TOKEN=123456:your-telegram-bot-token \
+  -e BOT_1_AGENT_ID=agent-b4c582f4-… \
+  -e BOT_1_ALLOWED_USER_IDS=11111111,22222222 \
+  -e BOT_1_ALLOWED_CHAT_IDS=-1001234567890 \
+  nvxdm/letta-telegram:latest
+```
+
+**With Docker Compose** — drop this `docker-compose.yml` next to your `.env`:
+
+```yaml
+services:
+  letta-telegram:
+    image: nvxdm/letta-telegram:latest
+    container_name: letta-telegram
+    restart: unless-stopped
+    env_file: .env
+    init: true
+    stop_grace_period: 20s
+```
+
+```bash
+docker compose up -d        # start in the background
+docker compose logs -f      # follow logs
+docker compose pull         # fetch a newer image…
+docker compose up -d        # …then recreate to apply it
+docker compose down         # stop & remove
+```
+
+…or inline the variables with an `environment:` block instead of `env_file`:
+
+```yaml
+services:
+  letta-telegram:
+    image: nvxdm/letta-telegram:latest
+    container_name: letta-telegram
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 20s
+    environment:
+      LETTA_BASE_URL: https://api.letta.com
+      LETTA_TOKEN: your-letta-api-key
+      BOT_1_NAME: primary
+      BOT_1_TOKEN: "123456:your-telegram-bot-token"
+      BOT_1_AGENT_ID: agent-b4c582f4-…
+      BOT_1_ALLOWED_USER_IDS: "11111111,22222222"
+      BOT_1_ALLOWED_CHAT_IDS: "-1001234567890"
+```
+
+> [!TIP]
+> The image is multi-arch (`linux/amd64` + `linux/arm64`), so the same tag runs on x86 servers and Apple-silicon / ARM hosts. Pin a specific release (e.g. `nvxdm/letta-telegram:0.1.0`) instead of `:latest` for reproducible deploys.
+
+### Build from source
+
+If you've cloned the repo, the bundled `docker-compose.yml` builds the image locally instead of pulling it:
+
+```bash
+docker compose up --build -d
 ```
 
 ## ⚙️ Configuration
@@ -93,7 +177,7 @@ Repeat the block for each bot — `BOT_1_*`, `BOT_2_*`, `BOT_3_*`, …
 | `BOT_<N>_ALLOWED_CHAT_IDS` | ✅ | Comma-separated group/supergroup IDs (negative numbers) · **empty = deny all groups** |
 
 > [!IMPORTANT]
-> **Indices must be contiguous starting at 1.** `BOT_1_*` is required if any bots are configured. Gaps are skipped (e.g. `BOT_1_*` then `BOT_3_*` with no `BOT_2_*` is tolerated), but the first index must be `1`.
+> Bots are discovered by scanning for `BOT_<N>_TOKEN` with any positive integer `N`. They load in ascending index order and **gaps are fine** (e.g. `BOT_1_*` then `BOT_3_*` with no `BOT_2_*` works), and the indices need not start at `1`. Each `BOT_<N>_NAME` must be unique.
 
 ### Misc
 
@@ -121,9 +205,8 @@ src/
 ├── letta/          # @letta-ai/letta-client wrapper + per-agent serialization
 ├── media/          # Telegram file download, TG→Letta payload, agent output parser
 ├── bots/           # Bot launcher (Telegraf), access control, update handler, sender
-├── common/         # Logger setup + global exception filter
 ├── app.module.ts
-└── main.ts
+└── main.ts         # Bootstrap, log-level setup, signal/error handling
 ```
 
 The handler middleware (`telegram-update.handler.ts`) is **bot-agnostic** and is bound at startup to every configured Telegraf instance via `bot.use(...)`. This avoids hard-coded `@Update()` classes and lets the bot list grow purely from env config.

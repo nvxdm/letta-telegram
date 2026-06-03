@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Context } from 'telegraf';
-import type { ParsedOutput } from '../../media/agent-output-parser.service';
+import { stripTags, type ParsedOutput } from '../../media/agent-output-parser.service';
 
 @Injectable()
 export class TelegramSenderService {
@@ -12,10 +12,11 @@ export class TelegramSenderService {
     for (const part of parsed.parts) {
       try {
         if (part.kind === 'photo') {
-          await ctx.replyWithPhoto(
-            part.url,
-            part.caption ? { caption: part.caption, parse_mode: 'HTML' } : undefined,
-          );
+          // The caption is already plain text (tags stripped), so send it without
+          // parse_mode — otherwise a stray '<' or '&' makes Telegram reject the
+          // whole photo. Cap at Telegram's 1024-char caption limit.
+          const caption = part.caption?.slice(0, 1024);
+          await ctx.replyWithPhoto(part.url, caption ? { caption } : undefined);
           continue;
         }
         if (part.kind === 'document') {
@@ -30,7 +31,7 @@ export class TelegramSenderService {
         this.logger.error(`Failed to send ${part.kind} part: ${msg}. Falling back to plain text.`);
         try {
           if (part.kind === 'text') {
-            await ctx.reply(stripHtml(part.html));
+            await ctx.reply(stripTags(part.html));
           } else {
             await ctx.reply(part.url);
           }
@@ -40,13 +41,4 @@ export class TelegramSenderService {
       }
     }
   }
-}
-
-function stripHtml(s: string): string {
-  return s
-    .replace(/<[^>]+>/g, '')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"');
 }
